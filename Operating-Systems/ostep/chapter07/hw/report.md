@@ -1,4 +1,4 @@
-# OSTEP Chapter 04 Homework
+# OSTEP Chapter 07 Homework
 
 숙제로 주어진 시뮬레이터 프로그램인 **process-run.py**는 간단한 CPU의 스케줄링 동작을 시뮬레이션하면서 표준 출력으로 시각화한다.
 
