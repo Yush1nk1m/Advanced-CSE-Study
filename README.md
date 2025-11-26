@@ -1,2 +1,17 @@
 # Advanced-CSE-Study
-Advanced Study of Computer Science &amp; Engineering
+
+이 리포지토리는 컴퓨터 과학 및 공학에 대한 깊이있는 학습을 위해 생성되었다.
+
+주로 운영체제, 네트워크, 데이터베이스 분야별로 우수한 서적을 읽고 연습 문제를 풀이하거나 다양한 실험 내용을 정리하는 것을 목표로 한다.
+
+## Operating-Systems
+
+운영체제에 관한 내용을 정리한다.
+
+## Databases
+
+데이터베이스에 관한 내용을 정리한다.
+
+## Networks
+
+네트워크에 관한 내용을 정리한다.
