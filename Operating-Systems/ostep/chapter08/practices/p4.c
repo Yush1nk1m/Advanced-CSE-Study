@@ -1,0 +1,28 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+
+int main(int argc, char *argv[]) {
+    int pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        // child: standard output redirection to file
+        close(STDOUT_FILENO);
+        open("./p4.output", O_CREAT | O_WRONLY | O_TRUNC, S_IRWXU);
+
+        char *myargs[3];
+        myargs[0] = strdup("wc");
+        myargs[1] = strdup("p4.c");
+        myargs[2] = NULL;
+        execvp(myargs[0], myargs);
+    } else {
+        int waitPid = wait(NULL);
+    }
+    return 0;
+}
