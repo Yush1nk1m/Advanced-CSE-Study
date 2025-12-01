@@ -321,3 +321,317 @@ int main(int argc, char* argv[]) {
 | **execvp()** | Vector (배열) | **PATH 검색**  |      현재 환경 상속      |
 | **execle()** |  List (나열)  |  명시적 경로   | **명시적 지정 (`envp`)** |
 | **execve()** | Vector (배열) |  명시적 경로   | **명시적 지정 (`envp`)** |
+
+## Problem 5
+
+    wait()를 사용하여 자식 프로세스가 종료되기를 기다리는 프로그램을 작성하라. wait()가 반환하는 것은 무엇인가? 자식 프로세스가 wait()를 호출하면 어떤 결과가 발생하는가?
+
+**p5.c**
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+int main(int argc, char* argv[]) {
+    int waitPid;
+
+    int pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        waitPid = wait(NULL);
+        printf("child has reaped(?) (pid: %d)\n", waitPid);
+    } else {
+        waitPid = wait(NULL);
+        printf("parent has reaped child (pid: %d)\n", waitPid);
+    }
+    return 0;
+}
+```
+
+**p5.c output**
+
+```bash
+$ ./a.out
+child has reaped(?) (pid: -1)
+parent has reaped child (pid: 1404615)
+```
+
+`wait()` 시스템 콜에 대한 설명은 다음과 같다.
+
+```
+pid_t wait(int *__stat_loc)
+Wait for a child to die. When one does, put its status in *STAT_LOC and return its process ID. For errors, return (pid_t) -1.
+
+This function is a cancellation point and therefore not marked with
+__THROW.
+```
+
+`wait()` 시스템 콜은 기본적으로 부모 프로세스가 회수 및 정리(Reaping)한 자식 프로세스의 프로세스 식별자를 반환한다. 만약 프로세스 그래프의 말단에 있는 자식 프로세스가 `wait()`을 호출한다면 해당 프로세스의 자식 프로세스는 존재하지 않기 때문에 운영체제는 이를 오류로 판단하고 `-1`을 반환한다.
+
+다음은 [Linux](https://github.com/torvalds/linux/blob/master/include/linux/sched.h)에서 프로세스 테이블을 나타내는 `task_struct` 자료구조의 내용 일부이다.
+
+**linux/include/linux/sched.h**
+
+```c
+struct task_struct {
+    ...
+	struct list_head		children;
+	struct list_head		sibling;
+	struct task_struct		*group_leader;
+    ...
+}
+```
+
+운영체제는 이처럼 프로세스 테이블에 자식 프로세스들의 정보를 연결 리스트 자료구조로 관리하고 있다. 그러므로 `wait()` 시스템 콜 호출 시 `children` 헤드 포인터가 `NULL`인지 확인함으로써 해당 프로세스가 프로세스 그래프에서 말단에 있는지를 즉시 파악할 수 있다.
+
+## Problem 6
+
+    위 문제에서 작성한 프로그램을 수정하여 wait() 대신에 waitpid()를 사용하라. 어떤 경우에 waitpid()를 사용하는 것이 좋은가?
+
+**p6.c**
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+int main(int argc, char* argv[]) {
+    int pid1, pid2, wid;
+
+    pid1 = fork();
+    if (pid1 < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid1 == 0) {
+        printf("child process (pid: %d) has started and need to be reaped ...\n", (int) getpid());
+    } else {
+        pid2 = fork();
+        if (pid2 < 0) {
+            fprintf(stderr, "fork failed\n");
+            exit(1);
+        } else if (pid2 == 0) {
+            printf("child process (pid: %d) has started and need to be reaped ...\n", (int) getpid());
+        } else {
+            wid = waitpid(pid2, NULL, 0);
+            printf("parent process has reaped the second child (pid: %d)\n", wid);
+            wid = waitpid(pid1, NULL, 0);
+            printf("parent process has reaped the first child (pid: %d)\n", wid);
+        }
+    }
+}
+```
+
+`waitpid()`는 부모 프로세스가 여러 개의 자식 프로세스를 생성했을 때 이들 각각의 실행 순서나 결과에 의존하는 경우, 또는 좀비 프로세스가 생기는 것을 방지하기 위해 모든 자식 프로세스들을 안전하게 회수 및 정리해야 할 필요가 있을 경우에 사용될 수 있다.
+
+## Problem 7
+
+    자식 프로세스를 생성하고 자식 프로세스가 표준 출력 (STDOUT_FILENO)을 닫는 프로그램을 작성하라. 자식이 설명자를 닫은 후에 아무거나 출력하기 위하여 printf()를 호출하면 무슨 일이 생기는가?
+
+**p7.c**
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+int main(int argc, char* argv[]) {
+    int pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        close(STDOUT_FILENO);
+        printf("hello world");
+    } else {
+        wait(NULL);
+    }
+    return 0;
+}
+```
+
+자식 프로세스의 입장에서는 표준 출력이 닫혔다. 즉, `STDOUT_FILENO` 상수에 지정된 번호(`1`)의 파일 디스크립터는 사용할 수 없게 되었다. 때문에 `printf()` 함수를 호출 시 해당 번호의 파일 디스크립터에 `write()` 시스템 콜 호출을 시도하고 표준 출력(터미널)에는 아무것도 출력되지 못한다.
+
+**practices/p4.c**
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+
+int main(int argc, char *argv[]) {
+    int pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        // child: standard output redirection to file
+        close(STDOUT_FILENO);
+        open("./p4.output", O_CREAT | O_WRONLY | O_TRUNC, S_IRWXU);
+
+        char *myargs[3];
+        myargs[0] = strdup("wc");
+        myargs[1] = strdup("p4.c");
+        myargs[2] = NULL;
+        execvp(myargs[0], myargs);
+    } else {
+        int waitPid = wait(NULL);
+    }
+    return 0;
+}
+```
+
+이 장의 예제 중 표준 출력 파일 디스크립터를 닫고 새로운 파일을 여는 프로그램이 있다. 이 프로그램은 닫힌 1번 파일 디스크립터를 재사용하여 표준 출력을 향한 출력이 새로이 열린 파일로 리다이렉션되는 현상을 의도한 것이다.
+
+`open()` 시스템 콜은 항상 사용 가능한 파일 디스크립터 번호 중 가장 작은 것을 할당하기 때문에 시스템에서 하나의 프로세스만 실행되고 있다(즉, 동시성 문제가 없다)고 가정한다면 위 프로그램의 동작은 일관될 것이다.
+
+## Problem 8
+
+    두 개의 자식 프로세스를 생성하고 pipe() 시스템 콜을 사용하여 한 자식의 표준 출력을 다른 자식의 입력으로 연결하는 프로그램을 작성하라.
+
+**p8.c**
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+#define BUFFER_SIZE 256
+
+int main(int argc, char* argv[]) {
+    int fd[2];
+    pid_t pid, wid;
+    char buffer[BUFFER_SIZE];
+    const char* message = "Message from the parent process";
+    int bytes_read;
+
+    close(STDIN_FILENO);
+    close(STDOUT_FILENO);
+
+    if (pipe(fd) == -1) {
+        perror("pipe failed");
+        exit(EXIT_FAILURE);
+    }
+
+    pid = fork();
+
+    if (pid < 0) {
+        perror("pipe failed");
+        exit(EXIT_FAILURE);
+    } else if (pid == 0) {
+        close(STDOUT_FILENO);
+
+        bytes_read = read(STDIN_FILENO, buffer, BUFFER_SIZE - 1);
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';
+            fprintf(stderr, "child (pid: %d) received a message [\"%s\"]\n", (int) getpid(), buffer);
+        } else {
+            perror("read failed");
+        }
+    } else {
+        close(STDIN_FILENO);
+
+        fprintf(stderr, "parent (pid: %d) sending a message [\"%s\"]\n", (int) getpid(), message);
+        write(STDOUT_FILENO, message, strlen(message));
+
+        close(STDOUT_FILENO);
+
+        wid = wait(NULL);
+        fprintf(stderr, "parent process has reaped child (pid: %d)\n", wid);
+    }
+    return 0;
+}
+```
+
+**p8.c output**
+
+```bash
+$ ./a.out
+parent (pid: 1424414) sending a message ["Message from the parent process"]
+child (pid: 1424415) received a message ["Message from the parent process"]
+parent process has reaped child (pid: 1424415)
+```
+
+처음에 표준 출력과 표준 입력을 닫고 `pipe()` 시스템 콜을 호출하여 파일 디스크립터를 재사용했다. 코드를 보면 알 수 있듯 시스템 콜 호출 결과가 저장된 `fd` 변수가 아닌 `STDIN_FILENO`, `STDOUT_FILENO` 파일 디스크립터를 통해 `read()`, `write()` 시스템 콜을 호출하고 있다.
+
+두 프로세스 모두 표준 출력과 표준 입력이 닫힌 상태이기 때문에 표준 에러에서 동작을 검증하였다. 하지만 이 방식은 부모 프로세스와 자식 프로세스 모두 표준 입출력을 사용할 수 없다는 결점이 존재한다.
+
+**p8_dup.c**
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+#define BUFFER_SIZE 256
+#define IN  0
+#define OUT 1
+
+int main(int argc, char* argv[]) {
+    int fd[2];
+    pid_t pid, wid;
+    char buffer[BUFFER_SIZE];
+    const char* message = "Message from the parent process";
+    int bytes_read;
+    int original_stdout;
+
+    if (pipe(fd) == -1) {
+        perror("pipe failed");
+        exit(EXIT_FAILURE);
+    }
+
+    original_stdout = dup(STDOUT_FILENO);
+    if (original_stdout == -1) {
+        perror("dup failed");
+        exit(EXIT_FAILURE);
+    }
+
+    pid = fork();
+
+    if (pid < 0) {
+        perror("pipe failed");
+        exit(EXIT_FAILURE);
+    } else if (pid == 0) {
+        dup2(fd[IN], STDIN_FILENO);
+
+        close(fd[IN]);
+        close(fd[OUT]);
+        close(original_stdout);
+
+        bytes_read = read(STDIN_FILENO, buffer, BUFFER_SIZE - 1);
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';
+            printf("child (pid: %d) received a message [\"%s\"]\n", (int) getpid(), buffer);
+        } else {
+            perror("read failed");
+        }
+    } else {
+        dup2(fd[OUT], STDOUT_FILENO);
+
+        close(fd[IN]);
+        close(fd[OUT]);
+
+        dprintf(original_stdout, "parent (pid: %d) sending a message [\"%s\"]\n", (int) getpid(), message);
+        write(STDOUT_FILENO, message, strlen(message));
+
+        wid = wait(NULL);
+        dprintf(original_stdout, "parent process has reaped child (pid: %d)\n", wid);
+    }
+    return 0;
+}
+```
+
+`dup()` 시스템 콜을 활용하면 원래의 표준 출력에 대한 파일 디스크립터를 캐싱하여 표준 에러가 아닌 표준 출력에 출력하는 것이 가능하다. 하지만 중요한 점은 이때 사용하고 있는 `original_stdout` 파일 디스크립터는 1번 파일 디스크립터가 아니라는 것이다. 그러므로 `dprintf()` 함수를 통해 출력을 수행해야 한다.
