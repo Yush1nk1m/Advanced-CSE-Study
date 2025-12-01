@@ -136,3 +136,188 @@ hellogoodbye
 실제 시스템에서는 `sleep()` 시스템 콜을 호출했다고 해도 언제나 자식 프로세스의 출력이 부모 프로세스의 출력보다 우선한다는 것이 보장되지는 않는다. 부모 프로세스가 I/O 대기 상태에 빠진 1초 동안 CPU는 자식 프로세스의 문자열 출력 작업보다 더 중요한 일을 해야 할 수도 있고, 1초 이후 자식 프로세스보다 부모 프로세스를 먼저 스케줄링하는 전략을 채택할 수도 있다.
 
 그러므로 `wait()` 시스템 콜을 통하지 아니하고서는 부모 프로세스의 실행 순서와 자식 프로세스의 실행 순서를 결정적(deterministic)으로 제어하는 방법은 존재하지 않는다. 이것은 `wait()` 시스템 콜이 설계된 의도 그 자체이다.
+
+## Problem 4
+
+    fork()를 호출하고 /bin/ls를 실행하기 위하여 exec() 계열의 함수를 호출하는 프로그램을 작성하라. exec()의 변형 execl(), execle(), execlp(), execv(), execvp(), execve() 모두를 사용할 수 있는지 시도해 보라. 기본적으로는 동일한 기능을 수행하는 시스템 콜에 여러 변형이 있는 이유를 생각해 보라.
+
+**p4.c**
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+
+int main(int argc, char* argv[]) {
+    int pid, ret;
+
+    // execl()
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        printf("child process (pid: %d) will execute execl()\n", (int) getpid());
+        ret = execl(
+            "/bin/ls",      // path to the executable file
+            "ls",           // the name the executable program is invoked with
+            (char*) NULL    // command-line arguments
+        );
+        if (ret == -1) {
+            fprintf(stderr, "exec failed\n");
+            exit(1);
+        }
+    } else {
+        wait(NULL);
+        printf("reaping has completed\n");
+    }
+
+    // execle()
+
+    // environment variables
+    char* const env[] = {
+        "HOME=/home/yushinkim",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        NULL
+    };
+
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        printf("child process (pid: %d) will execute execle()\n", (int) getpid());
+        ret = execle(
+            "/bin/ls",      // path to the executable file
+            "ls",           // the name the executable program is invoked with
+            "-l",           // command-line arguments
+            (char*) NULL,
+            env             // environment variables
+        );
+        if (ret == -1) {
+            fprintf(stderr, "exec failed\n");
+            exit(1);
+        }
+    } else {
+        wait(NULL);
+        printf("reaping has completed\n");
+    }
+
+    // execlp()
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        printf("child process (pid: %d) will execute execlp()\n", (int) getpid());
+        ret = execlp(
+            "/bin/ls",      // path to the executable file
+            "ls",           // the name the executable program is invoked with
+            "-l",           // command-line arguments
+            (char*) NULL
+        );
+        if (ret == -1) {
+            fprintf(stderr, "exec failed\n");
+            exit(1);
+        }
+    } else {
+        wait(NULL);
+        printf("reaping has completed\n");
+    }
+
+    // execv()
+
+    // command-line arguments
+    char* const new_argv[] = {"ls", "-l", NULL};
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        printf("child process (pid: %d) will execute execv()\n", (int) getpid());
+        ret = execv(
+            "/bin/ls",      // path to the executable file
+            new_argv        // command-line arguments
+        );
+        if (ret == -1) {
+            fprintf(stderr, "exec failed\n");
+            exit(1);
+        }
+    } else {
+        wait(NULL);
+        printf("reaping has completed\n");
+    }
+
+    // execvp()
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        printf("child process (pid: %d) will execute execvp()\n", (int) getpid());
+        ret = execvp(
+            "/bin/ls",      // path to the executable file
+            new_argv        // command-line arguments
+        );
+        if (ret == -1) {
+            fprintf(stderr, "exec failed\n");
+            exit(1);
+        }
+    } else {
+        wait(NULL);
+        printf("reaping has completed\n");
+    }
+
+    // execve()
+
+    // environment variables
+    char* const new_env[] = {
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        NULL
+    };
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork failed\n");
+        exit(1);
+    } else if (pid == 0) {
+        printf("child process (pid: %d) will execute execve()\n", (int) getpid());
+        ret = execve(
+            "/bin/ls",      // path to the executable file
+            new_argv,       // command-line arguments
+            new_env
+        );
+        if (ret == -1) {
+            fprintf(stderr, "exec failed\n");
+            exit(1);
+        }
+    } else {
+        wait(NULL);
+        printf("reaping has completed\n");
+    }
+
+    return 0;
+}
+```
+
+이 모든 함수들은 공통적으로 `execve()` 시스템 콜을 호출한다.
+
+`execl()`, `execv()` 함수의 차이점은 호출 시 가변 인자를 나열(`l`, list)할 것인지 배열(`v`, vector)로 전달할 것인지에 있다. 그리고 이 함수들은 기본적으로 환경 변수를 고려하지 않는다.
+
+그리고 `execlp()`, `execvp()` 함수는 다른 함수들과 달리 프로그램 실행 시 파일 검색을 위해 `PATH` 환경 변수에 정의된 경로를 참조한다. 함수 이름의 접미사 `p`가 의미하는 것이 바로 **path**이다.
+
+마지막으로 `execle()`, `execve()` 함수는 사용자가 직접 환경 변수를 인자로 전달할 수 있다. 함수 이름의 접미사 `e`가 의미하는 것이 바로 **environment**이다.
+
+그러므로 활용에 있어 유연성 자체는 `execve()` 함수가 가장 뛰어나고, `v` 계열의 함수가 `l` 계열의 함수보다는 인자를 배열의 형태로 전달한다는 점에서 확장성이 더 뛰어나다고 할 수 있다. 하지만 같은 `execve()` 시스템 콜을 호출하는 함수가 이렇게 다양하게 정의되어 있는 것은 사용자의 편의성과 프로그램의 유연성을 위한 것이다. 예를 들어 단순한 프로그램 호출을 위해 `execve()` 함수를 사용하고 인자에 `NULL` 값을 전달하는 것은 불필요한 코드의 증가를 유발한다.
+
+|     함수     |   인자 형식   | 파일 검색 방식 |      환경 변수 처리      |
+| :----------: | :-----------: | :------------: | :----------------------: |
+| **execl()**  |  List (나열)  |  명시적 경로   |      현재 환경 상속      |
+| **execv()**  | Vector (배열) |  명시적 경로   |      현재 환경 상속      |
+| **execlp()** |  List (나열)  | **PATH 검색**  |      현재 환경 상속      |
+| **execvp()** | Vector (배열) | **PATH 검색**  |      현재 환경 상속      |
+| **execle()** |  List (나열)  |  명시적 경로   | **명시적 지정 (`envp`)** |
+| **execve()** | Vector (배열) |  명시적 경로   | **명시적 지정 (`envp`)** |
