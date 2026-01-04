@@ -14,8 +14,9 @@ def generate_locality_trace(total_pages, hot_pages_count, length, hot_ratio=0.8)
 
 # 1. 참조 패턴 생성
 CACHE_SIZE = 6
-trace_length = 1000
-generated_trace = generate_locality_trace(total_pages=20, hot_pages_count=5, length=trace_length)
+generated_trace = generate_locality_trace(total_pages=30, hot_pages_count=6, length=300, hot_ratio=0.20)
+generated_trace.extend(generate_locality_trace(total_pages=30, hot_pages_count=6, length=200, hot_ratio=0.80))
+generated_trace.extend(generate_locality_trace(total_pages=30, hot_pages_count=6, length=500, hot_ratio=0.20))
 
 # 2. 파일로 출력 (comma-separated)
 file_name = "memory_trace.txt"

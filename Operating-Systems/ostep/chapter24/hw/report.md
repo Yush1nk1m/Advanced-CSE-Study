@@ -188,8 +188,9 @@ def generate_locality_trace(total_pages, hot_pages_count, length, hot_ratio=0.8)
 
 # 1. 참조 패턴 생성
 CACHE_SIZE = 6
-trace_length = 1000
-generated_trace = generate_locality_trace(total_pages=20, hot_pages_count=5, length=trace_length)
+generated_trace = generate_locality_trace(total_pages=30, hot_pages_count=6, length=200, hot_ratio=0.20)
+generated_trace.extend(generate_locality_trace(total_pages=30, hot_pages_count=6, length=300, hot_ratio=0.80))
+generated_trace.extend(generate_locality_trace(total_pages=30, hot_pages_count=6, length=500, hot_ratio=0.20))
 
 # 2. 파일로 출력 (comma-separated)
 file_name = "memory_trace.txt"
@@ -206,11 +207,145 @@ except IOError as e:
     print(f"파일 생성 중 오류 발생: {e}")
 ```
 
-얼마 간 지역성을 보이는 추적 기록을 생성하기 위해 사용된 아이디어는 간단하다. 참조가 자주 발생될 핫 페이지와 그렇지 않은 콜드 페이지를 1:3 정도의 비율로 구분하고 80:20 법칙에 따라 80% 정도의 참조가 핫 페이지에 의해 발생하게 하였다.
+원서에는 '얼마간의 지역성'이 'some locality'로 표기되어 있다. 따라서 총 1,000회의 참조에서 30%는 80:20 법칙에 의해 생성되고 나머지는 완전히 무작위하게 생성되도록 설정하였다. 이에 따라 도출되는 각 정책별 성능 지표는 다음과 같다.
 
-알고리즘별 페이지 히트율은 다음과 같다.
+- `OPT`: FINALSTATS hits 546 misses 454 hitrate 54.60
+- `LRU`: FINALSTATS hits 303 misses 697 hitrate 30.30
+- `RAND`: FINALSTATS hits 288 misses 712 hitrate 28.80
+- `CLOCK`: FINALSTATS hits 291 misses 709 hitrate 29.10 (`-b 1`) ~ FINALSTATS hits 310 misses 690 hitrate 31.00 (`-b 3`)
 
-- `OPT`: 82.40%
-- `LRU`: 67.40%
-- `RAND`: 61.90%
--
+참조 지역성이 발생하는 구간을 30% 정도로 설정했을 때까지는 LRU 정책의 성능 지표가 랜덤 정책의 성능 지표보다 약간 우수하다. 구간이 20% 정도일 때부터 LRU 정책보다 랜덤 정책의 성능이 약간씩 우수해지게 된다. 시계 정책 또한 LRU, RAND와 비슷한 성능 지표를 보이고 있으며 시계 비트의 수를 3으로 설정했을 때 미세하게 다른 성능 지표들을 앞섰다. 하지만 시계 비트의 수가 늘어난다고 해서 성능이 그에 비례하여 개선되지는 않는다.
+
+## Problem 5
+
+    Valgrind와 같은 프로그램을 사용하여 실제 응용 프로그램으로부터 정보를 추출하여 가상 페이지 참조 스트림을 생성하라. 예를 들어, valgrind --tool=lackey --trace-mem=yes ls 명령어를 실행시키면 ls 프로그램에 의해서 참조된 모든 명령과 데이터에 대한 거의 완벽한 참조 추적 기록을 출력할 것이다. 이 정보를 시뮬레이터에서 사용하기 위해서는 먼저 가상 메모리 참조를 가상 페이지 번호 참조로 변환해야 한다. 가상 주소의 오프셋 부분을 제거한 후 (masking of), 오프셋 비트 수만큼 오른쪽으로 시프트하면 된다. 당신의 응용 프로그램의 경우, 참조 요청의 대부분을 만족시키는 캐시의 크기는 얼마인가? 캐시의 크기가 증가할 때 응용 프로그램의 작은 집합의 변화를 그래프로 나타내어라.
+
+일단 `valgrind` 명령어를 수행하면 다음과 같이 메모리 참조에 대한 추적 기록이 생성된다.
+
+**valgrind 실행 결과**
+
+```bash
+$ valgrind --tool=lackey --trace-mem=yes ls
+...
+I  048d1b74,5
+I  048d1a2e,3
+I  048d1a31,5
+ S 1ffefff9f8,8
+I  04978200,4
+I  04978204,7
+ L 04a8cdf8,8
+I  0497820b,5
+I  04978210,2
+I  04978219,2
+I  0497821b,2
+==193445==
+==193445== Counted 0 calls to main()
+==193445==
+==193445== Jccs:
+==193445==   total:         113,761
+==193445==   taken:         42,692 (38%)
+==193445==
+==193445== Executed:
+==193445==   SBs entered:   119,601
+==193445==   SBs completed: 73,698
+==193445==   guest instrs:  659,853
+==193445==   IRStmts:       4,323,677
+==193445==
+==193445== Ratios:
+==193445==   guest instrs : SB entered  = 55 : 10
+==193445==        IRStmts : SB entered  = 361 : 10
+==193445==        IRStmts : guest instr = 65 : 10
+==193445==
+==193445== Exit code:       0
+```
+
+사용 중인 운영체제의 페이지 크기는 $4\text{KB}(=2^{12}\text{Bit})$ 이므로 하위 12개의 비트를 절삭하면 VPN을 추출할 수 있다. 이 VPN 정보를 토대로 작업 집합(Working Set) 크기의 변화에 따른 페이지 히트율을 계산할 수 있다.
+
+다음은 출력 행 추출, 비트 쉬프트, LRU 페이지 교체 정책에 따라 작업 집합 크기에 따른 히트율 계산을 수행하는 파이썬 시뮬레이터 프로그램이다.
+
+**simulator.py**
+
+```py
+import matplotlib.pyplot as plt
+from collections import deque
+
+def simulate_lru(trace_file, cache_size, page_size_bits=12):
+    """
+    LRU 캐시 시뮬레이터
+    - page_size_bits: 12 (4KB 페이지 기준)
+    """
+    cache = deque()
+    hits = 0
+    total = 0
+
+    with open(trace_file, 'r') as f:
+        for line in f:
+            # Lackey 출력 형식: " I  04015f60, 2" 또는 " L  04201c10, 4"
+            parts = line.split()
+            if len(parts) < 2: continue
+
+            try:
+                # 16진수 주소 추출 및 VPN 변환 (오프셋 제거를 위해 비트 시프트)
+                addr = int(parts[1].split(',')[0], 16)
+                vpn = addr >> page_size_bits
+
+                total += 1
+
+                if vpn in cache:
+                    hits += 1
+                    # 사용된 페이지를 가장 최근(오른쪽)으로 이동
+                    cache.remove(vpn)
+                    cache.append(vpn)
+                else:
+                    if len(cache) >= cache_size:
+                        cache.popleft() # 가장 오래된 페이지 제거
+                    cache.append(vpn)
+            except ValueError:
+                continue
+
+    return (hits / total) * 100 if total > 0 else 0
+
+# --- 시뮬레이션 실행 ---
+trace_path = 'trace.txt'  # Valgrind 추출 파일 경로
+cache_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] # 페이지 프레임 개수
+hit_rates = []
+
+print("시뮬레이션 시작...")
+for size in cache_sizes:
+    rate = simulate_lru(trace_path, size)
+    hit_rates.append(rate)
+    print(f"Cache Size: {size:4} pages | Hit Rate: {rate:.2f}%")
+
+# --- 결과 시각화 ---
+plt.figure(figsize=(10, 6))
+plt.plot(cache_sizes, hit_rates, marker='o', linestyle='-', color='b')
+plt.title('Cache Hit Rate vs. Cache Size (Working Set Analysis)')
+plt.xlabel('Cache Size (Number of Page Frames)')
+plt.ylabel('Hit Rate (%)')
+plt.xscale('log', base=2) # X축을 로그 스케일로 설정하여 가독성 증대
+plt.grid(True, which="both", ls="-", alpha=0.5)
+plt.show()
+```
+
+**실행 결과**
+
+```bash
+$ valgrind --tool=lackey --trace-mem=yes ls 2>&1 | grep -E '^( I| L| S)' > trace.txt
+$ python3 simulator.py
+시뮬레이션 시작...
+Cache Size:    1 pages | Hit Rate: 54.42%
+Cache Size:    2 pages | Hit Rate: 75.54%
+Cache Size:    4 pages | Hit Rate: 88.03%
+Cache Size:    8 pages | Hit Rate: 93.54%
+Cache Size:   16 pages | Hit Rate: 96.00%
+Cache Size:   32 pages | Hit Rate: 99.52%
+Cache Size:   64 pages | Hit Rate: 99.90%
+Cache Size:  128 pages | Hit Rate: 99.92%
+Cache Size:  256 pages | Hit Rate: 99.92%
+Cache Size:  512 pages | Hit Rate: 99.92%
+Cache Size: 1024 pages | Hit Rate: 99.92%
+```
+
+![result](result.png)
+
+작업 집합의 크기가 $2^5$ 이상이 되는 순간부터 대부분의 경우 페이지 히트가 발생하고, $2^7$ 이상이 되는 순간부터는 페이지 히트율이 고정된다.
