@@ -31,4 +31,6 @@ int main(int argc, char* argv[]) {
     printf("count: %d\n", count);
 
     // Mutex_destroy(&mutex);
+
+    return 0;
 }
